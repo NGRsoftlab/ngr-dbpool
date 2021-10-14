@@ -71,8 +71,9 @@ func (c *SafeDbMapCache) Set(key string, value *sqlx.DB, duration time.Duration)
 
 // Get getting a cache by key
 func (c *SafeDbMapCache) Get(key string) (*sqlx.DB, bool) {
-	c.RLock()
-	defer c.RUnlock()
+	// changed from RLock to Lock because of line 99 operation (updating creation time)
+	c.Lock()
+	defer c.Unlock()
 
 	item, found := c.pool[key]
 
