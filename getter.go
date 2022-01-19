@@ -1,14 +1,15 @@
 package dbpool
 
 import (
-	errorCustom "github.com/NGRsoftlab/error-lib"
-
 	"context"
+	"errors"
+	"time"
+
 	"github.com/jmoiron/sqlx"
 	"github.com/jmoiron/sqlx/reflectx"
-	"time"
 )
 
+// GetConnectionByParams - get *sqlx.DB from cache (if exists) or create new and put into cache
 func GetConnectionByParams(Ctx context.Context, connCache *SafeDbMapCache,
 	duration time.Duration, driver, connString string) (*sqlx.DB, error) {
 
@@ -26,7 +27,7 @@ func GetConnectionByParams(Ctx context.Context, connCache *SafeDbMapCache,
 	//create conn
 	db, err := sqlx.ConnectContext(Ctx, driver, connString)
 	if err != nil {
-		return nil, errorCustom.GlobalErrors.ErrBadDbConn()
+		return nil, err
 	}
 
 	//db.SetMaxIdleConns(10)
@@ -38,7 +39,7 @@ func GetConnectionByParams(Ctx context.Context, connCache *SafeDbMapCache,
 
 	conn, ok = connCache.Get(connString)
 	if !ok && conn == nil {
-		return nil, errorCustom.GlobalErrors.ErrBadDbConn()
+		return nil, errors.New("no conn in connCache")
 	}
 
 	return conn, nil

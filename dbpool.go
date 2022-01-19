@@ -1,15 +1,16 @@
 package dbpool
 
 import (
-	logging "github.com/NGRsoftlab/ngr-logging"
+	. "github.com/NGRsoftlab/ngr-logging"
 
 	"errors"
-	"github.com/jmoiron/sqlx"
 	"sync"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
-///////Safe db pool map with string in key///////////
+/////// Safe db pool map with string in key ///////////
 
 type PoolItem struct {
 	Expiration int64
@@ -27,7 +28,7 @@ type SafeDbMapCache struct {
 	cleanupInterval   time.Duration
 }
 
-// New. Initializing a new memory cache
+// New - initializing a new SafeDbMapCache cache
 func New(defaultExpiration, cleanupInterval time.Duration) *SafeDbMapCache {
 	items := make(map[string]PoolItem)
 
@@ -45,7 +46,7 @@ func New(defaultExpiration, cleanupInterval time.Duration) *SafeDbMapCache {
 	return &cache
 }
 
-// Set setting a cache by key
+// Set - setting *sqlx.DB value by key
 func (c *SafeDbMapCache) Set(key string, value *sqlx.DB, duration time.Duration) {
 	var expiration int64
 
@@ -69,7 +70,7 @@ func (c *SafeDbMapCache) Set(key string, value *sqlx.DB, duration time.Duration)
 	}
 }
 
-// Get getting a cache by key
+// Get - getting *sqlx.DB value by key
 func (c *SafeDbMapCache) Get(key string) (*sqlx.DB, bool) {
 	c.RLock()
 	defer c.RUnlock()
@@ -105,7 +106,7 @@ func (c *SafeDbMapCache) Get(key string) (*sqlx.DB, bool) {
 	return item.Db, true
 }
 
-// Delete cache by key
+// Delete - delete *sqlx.DB value by key
 // Return false if key not found
 func (c *SafeDbMapCache) Delete(key string) error {
 	c.Lock()
@@ -119,7 +120,7 @@ func (c *SafeDbMapCache) Delete(key string) error {
 
 	err := connector.Db.Close()
 	if err != nil {
-		logging.Logger.Warning("db connection close error: ", err)
+		Logger.Warningf("db connection close error: %s", err.Error())
 	}
 
 	delete(c.pool, key)
@@ -127,12 +128,12 @@ func (c *SafeDbMapCache) Delete(key string) error {
 	return nil
 }
 
-// StartGC start Garbage Collection
+// StartGC - start Garbage Collection
 func (c *SafeDbMapCache) StartGC() {
 	go c.GC()
 }
 
-// GC Garbage Collection
+// GC - Garbage Collection cycle
 func (c *SafeDbMapCache) GC() {
 	for {
 		<-time.After(c.cleanupInterval)
@@ -147,7 +148,7 @@ func (c *SafeDbMapCache) GC() {
 	}
 }
 
-// expiredKeys returns key list which are expired.
+// GetItems - returns item list.
 func (c *SafeDbMapCache) GetItems() (items []string) {
 	c.RLock()
 	defer c.RUnlock()
@@ -159,7 +160,7 @@ func (c *SafeDbMapCache) GetItems() (items []string) {
 	return
 }
 
-// expiredKeys returns key list which are expired.
+// ExpiredKeys - returns list of expired keys.
 func (c *SafeDbMapCache) ExpiredKeys() (keys []string) {
 	c.RLock()
 	defer c.RUnlock()
@@ -173,7 +174,7 @@ func (c *SafeDbMapCache) ExpiredKeys() (keys []string) {
 	return
 }
 
-// clearItems removes all the items which key in keys.
+// clearItems - removes all the items with key in keys.
 func (c *SafeDbMapCache) clearItems(keys []string) {
 	c.Lock()
 	defer c.Unlock()
@@ -184,7 +185,7 @@ func (c *SafeDbMapCache) clearItems(keys []string) {
 		if ok {
 			err := connector.Db.Close()
 			if err != nil {
-				logging.Logger.Warning("db connection close error: ", err)
+				Logger.Warningf("db connection close error: %s", err.Error())
 			}
 		}
 
@@ -192,7 +193,7 @@ func (c *SafeDbMapCache) clearItems(keys []string) {
 	}
 }
 
-// ClearAll removes all the items which key in keys.
+// ClearAll - removes all items.
 func (c *SafeDbMapCache) ClearAll() {
 	c.Lock()
 	defer c.Unlock()
@@ -203,7 +204,7 @@ func (c *SafeDbMapCache) ClearAll() {
 		if ok {
 			err := connector.Db.Close()
 			if err != nil {
-				logging.Logger.Warning("db connection close error: ", err)
+				Logger.Warningf("db connection close error: %s", err.Error())
 			}
 		}
 
