@@ -4,7 +4,7 @@ import (
 	_ "github.com/lib/pq"
 	_ "github.com/mailru/go-clickhouse"
 
-	logging "github.com/NGRsoftlab/ngr-logging"
+	. "github.com/NGRsoftlab/ngr-logging"
 
 	"context"
 	"fmt"
@@ -89,7 +89,7 @@ func TestDbPoolCache(t *testing.T) {
 
 	db, err := sqlx.ConnectContext(Ctx, driver, connStr)
 	if err != nil {
-		logging.Logger.Fatal(err)
+		Logger.Fatal(err)
 	}
 
 	LocalCache.Set(connStr, db, 10*time.Second)
@@ -98,33 +98,33 @@ func TestDbPoolCache(t *testing.T) {
 
 	cachedRes, ok := LocalCache.Get(connStr)
 	if ok {
-		logging.Logger.Debug("cached db is here: ", cachedRes)
+		Logger.Debug("cached db is here: ", cachedRes)
 
 		// use cachedRes
 		var name string
 		err = cachedRes.GetContext(Ctx, &name, "SELECT name FROM test WHERE id=1")
 		if err != nil {
-			logging.Logger.Fatal(err)
+			Logger.Fatal(err)
 		}
 
 	} else {
-		logging.Logger.Debug("no res: ", connStr)
+		Logger.Debug("no res: ", connStr)
 	}
 
 	time.Sleep(5 * time.Second)
 
 	cachedRes, ok = LocalCache.Get(connStr)
 	if ok {
-		logging.Logger.Debug("cached db is here: ", cachedRes)
+		Logger.Debug("cached db is here: ", cachedRes)
 
 		// use cachedRes
 		var name string
 		err = cachedRes.GetContext(Ctx, &name, "SELECT name FROM test WHERE id=1")
 		if err != nil {
-			logging.Logger.Fatal(err)
+			Logger.Fatal(err)
 		}
 
 	} else {
-		logging.Logger.Debug("no res: ", connStr)
+		Logger.Debug("no res: ", connStr)
 	}
 }
