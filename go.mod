@@ -1,6 +1,6 @@
 module github.com/NGRsoftlab/ngr-dbpool
 
-go 1.22
+go 1.22.3
 
 require (
 	github.com/NGRsoftlab/ngr-logging v1.0.0
