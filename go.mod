@@ -1,12 +1,13 @@
 module github.com/NGRsoftlab/ngr-dbpool
 
-go 1.13
+go 1.22.3
 
 require (
-	github.com/NGRsoftlab/error-lib v1.0.2
 	github.com/NGRsoftlab/ngr-logging v1.0.0
-	github.com/jmoiron/sqlx v1.3.4
-	github.com/lib/pq v1.10.2
-	github.com/mailru/go-clickhouse v1.7.0
-	github.com/sirupsen/logrus v1.8.1 // indirect
+	github.com/jmoiron/sqlx v1.4.0
+)
+
+require (
+	github.com/sirupsen/logrus v1.9.3 // indirect
+	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 )

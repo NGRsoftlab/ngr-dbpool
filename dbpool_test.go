@@ -1,130 +1,73 @@
 package dbpool
 
 import (
-	_ "github.com/lib/pq"
-	_ "github.com/mailru/go-clickhouse"
-
-	. "github.com/NGRsoftlab/ngr-logging"
-
-	"context"
+	"database/sql"
 	"fmt"
-	"github.com/jmoiron/sqlx"
 	"testing"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
-var okTimeout = time.Second * 60
-
 func TestDbPoolCache(t *testing.T) {
-	LocalCache := New(30*time.Second, 5*time.Second)
-
-	defer LocalCache.ClearAll()
-
-	////CH
-	//driver := "clickhouse"
-	//connStr := fmt.Sprintf("http://%s:%s@%s:%s/%s?read_timeout=20s&write_timeout=30s",
-	//	"",
-	//	"",
-	//	"",
-	//	"8123",
-	//	"")
-	//
-	//Ctx, cancel := context.WithTimeout(context.Background(), okTimeout)
-	//defer cancel()
-	//
-	//db, err := sqlx.ConnectContext(Ctx, driver, connStr)
-	//if err != nil {
-	//	logging.Logger.Fatal(err)
-	//}
-	//
-	//LocalCache.Set(connStr, db, 10*time.Second)
-	//
-	//time.Sleep(5 * time.Second)
-	//
-	//cachedRes, ok := LocalCache.Get(connStr)
-	//if ok {
-	//	logging.Logger.Debug("cached db is here: ", cachedRes)
-	//
-	//	// use cachedRes
-	//	var name string
-	//	err = cachedRes.GetContext(Ctx, &name,"SELECT name FROM test WHERE id=1")
-	//	if err != nil {
-	//		logging.Logger.Fatal(err)
-	//	}
-	//
-	//} else {
-	//	logging.Logger.Debug("no res: ", connStr)
-	//}
-	//
-	//time.Sleep(6 * time.Second)
-	//
-	//cachedRes, ok = LocalCache.Get(connStr)
-	//if ok {
-	//	logging.Logger.Debug("cached db is here: ", cachedRes)
-	//
-	//	// use cachedRes
-	//	var name string
-	//	err = cachedRes.GetContext(Ctx, &name,"SELECT name FROM test WHERE id=1")
-	//	if err != nil {
-	//		logging.Logger.Fatal(err)
-	//	}
-	//
-	//} else {
-	//	logging.Logger.Debug("no res: ", connStr)
-	//}
-
-	////////////////////////////////////////////////////////////////////////
-
-	//// POSTGRES
-	driver := "postgres"
-	connStr := fmt.Sprintf("%s://%s:%s@%s/%s",
-		"postgres",
-		"", // username
-		"", // userpass
-		"", // ip
-		"") // dbname
-
-	Ctx, cancel := context.WithTimeout(context.Background(), okTimeout)
-	defer cancel()
-
-	db, err := sqlx.ConnectContext(Ctx, driver, connStr)
-	if err != nil {
-		Logger.Fatal(err)
+	tests := []struct {
+		name         string
+		okResTimeout time.Duration
+		noResTimeout time.Duration
+		checkData    map[string]*sqlx.DB
+	}{
+		{
+			name:         "valid (nil dn.connections in data)",
+			okResTimeout: 1 * time.Second,
+			noResTimeout: 6 * time.Second,
+			checkData: map[string]*sqlx.DB{
+				fmt.Sprintf("%s://%s:%s@%s/%s",
+					"testD1",
+					"testI",
+					"testP",
+					"testU",
+					"testPS"): {
+					DB:     &sql.DB{},
+					Mapper: nil,
+				},
+				fmt.Sprintf("%s://%s:%s@%s/%s",
+					"testD2",
+					"testI",
+					"testP",
+					"testU",
+					"testPS"): {
+					DB:     &sql.DB{},
+					Mapper: nil,
+				},
+			},
+		},
 	}
 
-	LocalCache.Set(connStr, db, 10*time.Second)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			LocalCache := New(10*time.Second, 5*time.Second)
+			defer LocalCache.ClearAll()
 
-	//time.Sleep(5 * time.Second)
+			for k, v := range tt.checkData {
+				LocalCache.Set(k, v, 5*time.Second)
+			}
 
-	cachedRes, ok := LocalCache.Get(connStr)
-	if ok {
-		Logger.Debug("cached db is here: ", cachedRes)
+			time.Sleep(tt.okResTimeout)
+			for k := range tt.checkData {
+				_, ok := LocalCache.Get(k)
+				if !ok {
+					t.Error("no cached result found")
+				}
+			}
 
-		// use cachedRes
-		var name string
-		err = cachedRes.GetContext(Ctx, &name, "SELECT name FROM test WHERE id=1")
-		if err != nil {
-			Logger.Fatal(err)
-		}
+			time.Sleep(tt.noResTimeout)
+			for k := range tt.checkData {
+				_, ok := LocalCache.Get(k)
+				if ok {
+					t.Error("cached result was not deleted after timeout")
+				}
+			}
 
-	} else {
-		Logger.Debug("no res: ", connStr)
-	}
-
-	time.Sleep(5 * time.Second)
-
-	cachedRes, ok = LocalCache.Get(connStr)
-	if ok {
-		Logger.Debug("cached db is here: ", cachedRes)
-
-		// use cachedRes
-		var name string
-		err = cachedRes.GetContext(Ctx, &name, "SELECT name FROM test WHERE id=1")
-		if err != nil {
-			Logger.Fatal(err)
-		}
-
-	} else {
-		Logger.Debug("no res: ", connStr)
+		})
 	}
 }

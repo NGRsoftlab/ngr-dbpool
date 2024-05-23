@@ -1,23 +1,23 @@
 package dbpool
 
 import (
-	. "github.com/NGRsoftlab/ngr-logging"
-
 	"errors"
 	"sync"
 	"time"
 
+	. "github.com/NGRsoftlab/ngr-logging"
+
 	"github.com/jmoiron/sqlx"
 )
 
-/////// Safe db pool map with string in key ///////////
+////////////////////////////////////////////////////////// Safe db pool map with string in key
 
 type PoolItem struct {
 	Expiration int64
 	Duration   time.Duration
 	Created    time.Time
 
-	Db *sqlx.DB
+	DB *sqlx.DB
 }
 
 type SafeDbMapCache struct {
@@ -46,6 +46,60 @@ func New(defaultExpiration, cleanupInterval time.Duration) *SafeDbMapCache {
 	return &cache
 }
 
+// closePoolDB - close connector.DB wrapper
+func (p *PoolItem) closePoolDB() {
+	defer panicPoolRecover()
+	err := p.DB.Close()
+	if err != nil {
+		Logger.Warningf("db connection close error: %s", err.Error())
+	}
+}
+
+// nullDBRecover - recover
+func panicPoolRecover() {
+	if r := recover(); r != nil {
+		Logger.Warning("Recovered in dbpool function: ", r)
+	}
+}
+
+////////////////////////////////////////////////////////// Get-Set
+
+// Get - getting *sqlx.DB value by key
+func (c *SafeDbMapCache) Get(key string) (*sqlx.DB, bool) {
+	// changed from RLock to Lock because of line 99 operation (updating creation time)
+	c.Lock()
+	defer c.Unlock()
+
+	item, found := c.pool[key]
+
+	// cache not found
+	if !found {
+		return nil, false
+	}
+
+	if item.Expiration > 0 {
+		// cache expired
+		if time.Now().UnixNano() > item.Expiration {
+			return nil, false
+		}
+	}
+
+	// TODO: set new timeout (?????? - think about it)
+	var newExpiration int64
+	if item.Duration > 0 {
+		newExpiration = time.Now().Add(item.Duration).UnixNano()
+	}
+
+	c.pool[key] = PoolItem{
+		DB:         item.DB,
+		Expiration: newExpiration,
+		Duration:   item.Duration,
+		Created:    time.Now(),
+	}
+
+	return item.DB, true
+}
+
 // Set - setting *sqlx.DB value by key
 func (c *SafeDbMapCache) Set(key string, value *sqlx.DB, duration time.Duration) {
 	var expiration int64
@@ -63,98 +117,21 @@ func (c *SafeDbMapCache) Set(key string, value *sqlx.DB, duration time.Duration)
 	defer c.Unlock()
 
 	c.pool[key] = PoolItem{
-		Db:         value,
+		DB:         value,
 		Expiration: expiration,
 		Duration:   duration,
 		Created:    time.Now(),
 	}
 }
 
-// Get - getting *sqlx.DB value by key
-func (c *SafeDbMapCache) Get(key string) (*sqlx.DB, bool) {
-	// changed from RLock to Lock because of line 99 operation (updating creation time)
-	c.Lock()
-	defer c.Unlock()
-
-	item, found := c.pool[key]
-
-	// cache not found
-	if !found {
-		return nil, false
-	}
-
-	if item.Expiration > 0 {
-
-		// cache expired
-		if time.Now().UnixNano() > item.Expiration {
-			return nil, false
-		}
-	}
-
-	////TODO: set new timeout (?????? - think about it)
-	var newExpiration int64
-	if item.Duration > 0 {
-		newExpiration = time.Now().Add(item.Duration).UnixNano()
-	}
-
-	c.pool[key] = PoolItem{
-		Db:         item.Db,
-		Expiration: newExpiration,
-		Duration:   item.Duration,
-		Created:    time.Now(),
-	}
-
-	return item.Db, true
-}
-
-// Delete - delete *sqlx.DB value by key
-// Return false if key not found
-func (c *SafeDbMapCache) Delete(key string) error {
-	c.Lock()
-	defer c.Unlock()
-
-	connector, found := c.pool[key]
-
-	if !found {
-		return errors.New("key not found")
-	}
-
-	err := connector.Db.Close()
-	if err != nil {
-		Logger.Warningf("db connection close error: %s", err.Error())
-	}
-
-	delete(c.pool, key)
-
-	return nil
-}
-
-// StartGC - start Garbage Collection
-func (c *SafeDbMapCache) StartGC() {
-	go c.GC()
-}
-
-// GC - Garbage Collection cycle
-func (c *SafeDbMapCache) GC() {
-	for {
-		<-time.After(c.cleanupInterval)
-
-		if c.pool == nil {
-			return
-		}
-
-		if keys := c.ExpiredKeys(); len(keys) != 0 {
-			c.clearItems(keys)
-		}
-	}
-}
+////////////////////////////////////////////////////////// Items
 
 // GetItems - returns item list.
 func (c *SafeDbMapCache) GetItems() (items []string) {
 	c.RLock()
 	defer c.RUnlock()
 
-	for k, _ := range c.pool {
+	for k := range c.pool {
 		items = append(items, k)
 	}
 
@@ -184,17 +161,54 @@ func (c *SafeDbMapCache) clearItems(keys []string) {
 		connector, ok := c.pool[k]
 
 		if ok {
-			err := connector.Db.Close()
-			if err != nil {
-				Logger.Warningf("db connection close error: %s", err.Error())
-			}
+			connector.closePoolDB()
 		}
 
 		delete(c.pool, k)
 	}
 }
 
-// ClearAll - removes all items.
+////////////////////////////////////////////////////////// Cleaning
+
+// StartGC - start Garbage Collection
+func (c *SafeDbMapCache) StartGC() {
+	go c.GC()
+}
+
+// GC - Garbage Collection cycle
+func (c *SafeDbMapCache) GC() {
+	for {
+		<-time.After(c.cleanupInterval)
+
+		if c.pool == nil {
+			return
+		}
+
+		if keys := c.ExpiredKeys(); len(keys) != 0 {
+			c.clearItems(keys)
+		}
+	}
+}
+
+// Delete - delete *sqlx.DB value by key. Return false if key not found
+func (c *SafeDbMapCache) Delete(key string) error {
+	c.Lock()
+	defer c.Unlock()
+
+	connector, found := c.pool[key]
+
+	if !found {
+		return errors.New("key not found")
+	}
+
+	connector.closePoolDB()
+
+	delete(c.pool, key)
+
+	return nil
+}
+
+// ClearAll - remove all items.
 func (c *SafeDbMapCache) ClearAll() {
 	c.Lock()
 	defer c.Unlock()
@@ -203,10 +217,7 @@ func (c *SafeDbMapCache) ClearAll() {
 		connector, ok := c.pool[k]
 
 		if ok {
-			err := connector.Db.Close()
-			if err != nil {
-				Logger.Warningf("db connection close error: %s", err.Error())
-			}
+			connector.closePoolDB()
 		}
 
 		delete(c.pool, k)
