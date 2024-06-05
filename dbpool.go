@@ -2,10 +2,9 @@ package dbpool
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
-
-	. "github.com/NGRsoftlab/ngr-logging"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -51,14 +50,14 @@ func (p *PoolItem) closePoolDB() {
 	defer panicPoolRecover()
 	err := p.DB.Close()
 	if err != nil {
-		Logger.Warningf("db connection close error: %s", err.Error())
+		fmt.Printf("error: db connection close error: %s\n", err.Error())
 	}
 }
 
 // nullDBRecover - recover
 func panicPoolRecover() {
 	if r := recover(); r != nil {
-		Logger.Warning("Recovered in dbpool function: ", r)
+		fmt.Printf("Recovered in dbpool function: %v\n", r)
 	}
 }
 
